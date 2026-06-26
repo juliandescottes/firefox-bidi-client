@@ -13,18 +13,14 @@ export interface FirefoxLaunchOptions {
   viewport?: { width: number; height: number };
   /** Additional Firefox arguments */
   args?: string[];
-  /** URL to navigate to on startup */
-  startUrl?: string;
-  /** Accept insecure certificates */
+  /** Accept insecure certificates (passed via session.new capabilities) */
   acceptInsecureCerts?: boolean;
   /** Environment variables for Firefox process */
   env?: Record<string, string>;
   /** Path to log file for Firefox output */
   logFile?: string;
-  /** Firefox preferences to set at startup */
+  /** Firefox preferences (passed via moz:firefoxOptions in session.new capabilities) */
   prefs?: Record<string, string | number | boolean>;
-  /** Connect to existing Firefox on this port instead of launching */
-  remoteDebuggingPort?: number;
 }
 
 export interface BiDiConnectionOptions {
