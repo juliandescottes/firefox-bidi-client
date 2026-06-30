@@ -78,6 +78,9 @@ export class FirefoxProcessManager {
   private buildFirefoxArgs(options: FirefoxLaunchOptions): string[] {
     const args: string[] = [];
 
+    // Prevent Firefox from delegating to an existing running instance
+    args.push('--no-remote');
+
     // Enable remote debugging with BiDi
     // Using port 0 tells Firefox to choose a free port
     args.push('--remote-debugging-port=0');

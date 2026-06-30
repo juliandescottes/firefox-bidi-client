@@ -13,6 +13,7 @@ export class BiDiConnection {
   private nextId: number = 1;
   private pendingCommands: Map<number, PendingCommand> = new Map();
   private eventHandlers: Set<EventHandler> = new Set();
+  private namedEventHandlers: Map<string, Set<(params: any) => void>> = new Map();
   private connected: boolean = false;
   private options: BiDiConnectionOptions;
 
@@ -43,16 +44,6 @@ export class BiDiConnection {
         await this.connectToEndpoint(endpoint);
         log(`✅ Connected to Firefox BiDi at ${endpoint}`);
         this.connected = true;
-
-        // Create a BiDi session
-        try {
-          await this.sendCommand('session.new', { capabilities: {} });
-          logDebug('BiDi session established');
-        } catch (sessionError) {
-          // Some BiDi endpoints (like /session) already have a session
-          logDebug(`Session already exists or not needed: ${sessionError}`);
-        }
-
         return;
       } catch (error) {
         lastError = error as Error;
@@ -170,6 +161,16 @@ export class BiDiConnection {
           logDebug(`Error in event handler: ${error}`);
         }
       }
+      const named = this.namedEventHandlers.get(message.method);
+      if (named) {
+        for (const handler of named) {
+          try {
+            handler(message.params);
+          } catch (error) {
+            logDebug(`Error in named event handler for ${message.method}: ${error}`);
+          }
+        }
+      }
     }
   }
 
@@ -179,11 +180,6 @@ export class BiDiConnection {
   async sendCommand(method: string, params: any = {}): Promise<any> {
     if (!this.ws) {
       throw new Error('Not connected to Firefox BiDi');
-    }
-
-    // Wait for WebSocket to be ready
-    if (this.ws.readyState === WebSocket.CONNECTING) {
-      await this.waitForWebSocketOpen();
     }
 
     if (this.ws.readyState !== WebSocket.OPEN) {
@@ -230,7 +226,8 @@ export class BiDiConnection {
   }
 
   /**
-   * Register event handler
+   * Register a handler for raw WebSocket-level events ('message', 'close', 'error').
+   * For BiDi protocol events use onEvent() instead.
    */
   on(event: 'message' | 'close' | 'error', handler: EventHandler): void {
     if (event === 'message') {
@@ -241,12 +238,31 @@ export class BiDiConnection {
   }
 
   /**
-   * Remove event handler
+   * Remove a raw event handler registered with on().
    */
   off(event: 'message', handler: EventHandler): void {
     if (event === 'message') {
       this.eventHandlers.delete(handler);
     }
+  }
+
+  /**
+   * Register a handler for a specific BiDi event method (e.g. 'log.entryAdded').
+   * The handler receives event.params directly.
+   * Remember to call subscribe() for the event type before expecting events.
+   */
+  onEvent(method: string, handler: (params: any) => void): void {
+    if (!this.namedEventHandlers.has(method)) {
+      this.namedEventHandlers.set(method, new Set());
+    }
+    this.namedEventHandlers.get(method)!.add(handler);
+  }
+
+  /**
+   * Remove a handler registered with onEvent().
+   */
+  offEvent(method: string, handler: (params: any) => void): void {
+    this.namedEventHandlers.get(method)?.delete(handler);
   }
 
   /**
@@ -261,38 +277,6 @@ export class BiDiConnection {
    */
   isConnected(): boolean {
     return this.connected && this.ws !== null && this.ws.readyState === WebSocket.OPEN;
-  }
-
-  /**
-   * Wait for WebSocket to be in OPEN state
-   */
-  private async waitForWebSocketOpen(): Promise<void> {
-    if (!this.ws) {
-      throw new Error('WebSocket not initialized');
-    }
-
-    if (this.ws.readyState === WebSocket.OPEN) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Timeout waiting for WebSocket to open'));
-      }, this.options.connectionTimeout!);
-
-      const checkState = () => {
-        if (this.ws!.readyState === WebSocket.OPEN) {
-          clearTimeout(timeout);
-          resolve();
-        } else if (this.ws!.readyState === WebSocket.CLOSED || this.ws!.readyState === WebSocket.CLOSING) {
-          clearTimeout(timeout);
-          reject(new Error('WebSocket closed while waiting'));
-        }
-      };
-
-      this.ws!.once('open', checkState);
-      checkState(); // Check immediately in case it's already open
-    });
   }
 
   /**
@@ -311,6 +295,7 @@ export class BiDiConnection {
 
       // Clear event handlers
       this.eventHandlers.clear();
+      this.namedEventHandlers.clear();
 
       // Close WebSocket
       if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
