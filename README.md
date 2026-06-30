@@ -26,13 +26,13 @@ Minimal WebDriver BiDi protocol client for Firefox. Provides low-level primitive
 ## Installation
 
 ```bash
-npm install firefox-bidi-client
+npm install ff-test-firefox-bidi-client
 ```
 
 ## Quick Start
 
 ```typescript
-import { BiDiConnection, FirefoxProcessManager } from 'firefox-bidi-client';
+import { BiDiConnection, FirefoxProcessManager } from 'ff-test-firefox-bidi-client';
 
 // Launch Firefox
 const manager = new FirefoxProcessManager();
@@ -138,7 +138,7 @@ await manager.kill();
 ### Connect to existing Firefox
 
 ```typescript
-import { BiDiConnection } from 'firefox-bidi-client';
+import { BiDiConnection } from 'ff-test-firefox-bidi-client';
 
 // Start Firefox manually with: firefox --remote-debugging-port=9222
 const connection = new BiDiConnection();
@@ -161,7 +161,7 @@ await connection.subscribe(['log.entryAdded']);
 ### Custom logger
 
 ```typescript
-import { setLogger, type Logger } from 'firefox-bidi-client';
+import { setLogger, type Logger } from 'ff-test-firefox-bidi-client';
 
 const myLogger: Logger = {
   log: (msg) => console.log(msg),
