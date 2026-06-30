@@ -2,21 +2,14 @@
 
 Minimal WebDriver BiDi protocol client for Firefox. Provides both a high-level page API for writing scripts quickly and low-level primitives for direct BiDi communication and Firefox process management.
 
-## Features
-
-- **Minimal & focused** - Just connection, commands, and events
-- **Pure BiDi protocol** - Direct WebSocket communication
-- **Process management** - Launch and manage Firefox instances
-- **Zero dependencies** (except `ws` for WebSocket)
-- **TypeScript** - Fully typed
-- **Flexible logging** - Bring your own logger
-
 ## What This Package Does
 
 - `startSession` / `Session` - High-level API: launch Firefox, connect, and get a ready-to-use page
 - `BiDiPage` - Page-level helpers: navigate, evaluate scripts, click, type, wait, screenshot
 - `BiDiConnection` - WebSocket connection, send commands, receive responses/events
 - `FirefoxProcessManager` - Launch Firefox and discover BiDi port
+
+Both layers can be mixed freely: `session.connection` exposes the raw connection for any BiDi command not covered by `BiDiPage`.
 
 ## CLI: ff-bidi-run
 
@@ -50,7 +43,7 @@ npm install ff-test-firefox-bidi-client
 
 ## Quick Start
 
-### High-level API (recommended)
+### High-level API
 
 ```typescript
 import { startSession } from 'ff-test-firefox-bidi-client';
@@ -69,29 +62,24 @@ await session.close();
 ```typescript
 import { BiDiConnection, FirefoxProcessManager } from 'ff-test-firefox-bidi-client';
 
-// Launch Firefox
 const manager = new FirefoxProcessManager();
 const port = await manager.launch({
   headless: true,
   viewport: { width: 1280, height: 720 },
 });
 
-// Connect to BiDi
 const connection = new BiDiConnection();
 await connection.connect(port);
 
-// Get context
 const tree = await connection.sendCommand('browsingContext.getTree', {});
 const contextId = tree.contexts[0].context;
 
-// Navigate
 await connection.sendCommand('browsingContext.navigate', {
   context: contextId,
   url: 'https://example.com',
   wait: 'complete',
 });
 
-// Execute script
 const result = await connection.sendCommand('script.evaluate', {
   expression: 'document.title',
   target: { context: contextId },
@@ -100,7 +88,6 @@ const result = await connection.sendCommand('script.evaluate', {
 
 console.log('Title:', result.result.value);
 
-// Cleanup
 await connection.close();
 await manager.kill();
 ```
@@ -108,8 +95,6 @@ await manager.kill();
 ## API Reference
 
 ### startSession(options?)
-
-Launch Firefox and return a `Session` with a ready page.
 
 ```typescript
 const session = await startSession({
@@ -140,8 +125,6 @@ await session.close()               // close connection and kill Firefox
 
 ### BiDiPage
 
-High-level page helpers.
-
 ```typescript
 // Navigation
 await page.goto(url, { wait?: 'none' | 'interactive' | 'complete' });
@@ -163,16 +146,14 @@ await page.waitForFunction(expr, options);  // poll until expression returns tru
 await page.waitFor(expr, options);          // alias for waitForFunction
 
 // Page info
-const title = await page.title();    // document.title
-const url   = await page.url();      // location.href
+const title = await page.title();
+const url   = await page.url();
 
 // Screenshot
 const buffer = await page.screenshot({ path?: string });
 ```
 
 ### BiDiConnection
-
-Low-level BiDi WebSocket connection.
 
 ```typescript
 const connection = new BiDiConnection({
@@ -198,8 +179,6 @@ await connection.close();
 ```
 
 ### FirefoxProcessManager
-
-Manage Firefox process lifecycle.
 
 ```typescript
 const manager = new FirefoxProcessManager();
@@ -275,13 +254,6 @@ const myLogger: Logger = {
 
 setLogger(myLogger);
 ```
-
-## Design Philosophy
-
-This package provides two layers:
-
-1. **High-level** (`startSession`, `BiDiPage`) - Playwright-inspired helpers that cover the common 90%: navigate, evaluate, click, type, wait, screenshot.
-2. **Low-level** (`BiDiConnection`, `FirefoxProcessManager`) - Raw primitives for anything the high-level API does not cover. `session.connection` exposes the connection directly so you can mix both layers freely.
 
 ## BiDi Protocol Resources
 
