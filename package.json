@@ -1,6 +1,6 @@
 {
   "name": "ff-test-firefox-bidi-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pure WebDriver BiDi client for Firefox automation",
   "type": "module",
   "main": "dist/index.js",
