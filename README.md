@@ -266,4 +266,4 @@ This package provides two layers:
 
 ## License
 
-MIT
+MIT OR Apache-2.0

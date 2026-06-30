@@ -34,8 +34,8 @@
     "automation",
     "testing"
   ],
-  "author": "Julian Descottes",
-  "license": "MIT",
+  "author": "Mozilla",
+  "license": "MIT OR Apache-2.0",
   "engines": {
     "node": ">=20.0.0"
   },
