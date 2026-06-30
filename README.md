@@ -18,6 +18,30 @@ Minimal WebDriver BiDi protocol client for Firefox. Provides both a high-level p
 - `BiDiConnection` - WebSocket connection, send commands, receive responses/events
 - `FirefoxProcessManager` - Launch Firefox and discover BiDi port
 
+## CLI: ff-bidi-run
+
+`ff-bidi-run` is a thin script runner that translates CLI flags into the environment variables read by `startSession`, adds a watchdog timeout, and executes your script.
+
+```bash
+ff-bidi-run <script.mjs> [options]
+
+Options:
+  -f, --firefox <path>      Path to Firefox binary
+  -p, --profile <path>      Path to Firefox profile directory
+      --pref <key=value>    Set a Firefox preference (repeatable)
+      --headless            Run Firefox in headless mode
+  -d, --debug               Enable BiDi debug logging
+  -t, --timeout <ms>        Script timeout in ms (default: 30000)
+```
+
+Example:
+
+```bash
+ff-bidi-run my-script.mjs --headless --firefox /usr/bin/firefox --pref dom.ipc.processCount=1
+```
+
+Your script just calls `startSession` normally — the runner injects the options via environment variables.
+
 ## Installation
 
 ```bash
