@@ -4,8 +4,12 @@ export { BiDiPage } from './bidi-page.js';
 export { startSession, Session } from './session.js';
 export { setLogger, ConsoleLogger, type Logger } from './logger.js';
 
+export { ChromeLauncher } from './chrome/index.js';
+
 export type {
+  BrowserLaunchOptions,
   FirefoxLaunchOptions,
+  ChromeLaunchOptions,
   BiDiConnectionOptions,
   BrowsingContext,
   GetTreeResult,

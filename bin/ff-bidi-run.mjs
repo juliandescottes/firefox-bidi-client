@@ -5,13 +5,16 @@ import { resolve } from 'node:path';
 
 const { values, positionals } = parseArgs({
   options: {
-    firefox:  { type: 'string',  short: 'f' },
-    profile:  { type: 'string',  short: 'p' },
-    pref:     { type: 'string',  multiple: true },
-    headless: { type: 'boolean', default: false },
-    debug:    { type: 'boolean', short: 'd', default: false },
-    timeout:  { type: 'string',  short: 't', default: '30000' },
-    help:     { type: 'boolean', short: 'h', default: false },
+    browser:   { type: 'string',  short: 'b' },
+    firefox:   { type: 'string',  short: 'f' },
+    profile:   { type: 'string',  short: 'p' },
+    pref:      { type: 'string',  multiple: true },
+    'chrome-path': { type: 'string' },
+    'bidi-url':{ type: 'string' },
+    headless:  { type: 'boolean', default: false },
+    debug:     { type: 'boolean', short: 'd', default: false },
+    timeout:   { type: 'string',  short: 't', default: '30000' },
+    help:      { type: 'boolean', short: 'h', default: false },
   },
   allowPositionals: true,
 });
@@ -21,11 +24,21 @@ const [scriptPath] = positionals;
 if (values.help || !scriptPath) {
   console.error('Usage: ff-bidi-run <script.mjs> [options]');
   console.error('');
-  console.error('Options:');
+  console.error('Browser selection:');
+  console.error('  -b, --browser <browser>   Browser to use: firefox (default) or chrome');
+  console.error('');
+  console.error('Firefox options:');
   console.error('  -f, --firefox <path>      Path to Firefox binary');
   console.error('  -p, --profile <path>      Path to Firefox profile directory');
   console.error('      --pref <key=value>    Set a Firefox preference (repeatable)');
   console.error('      --headless            Run Firefox in headless mode');
+  console.error('');
+  console.error('Chrome options:');
+  console.error('      --headless             Run Chrome in headless mode');
+  console.error('      --chrome-path <path>   Path to Chrome binary (default: system stable Chrome)');
+  console.error('      --bidi-url <url>       Connect to an existing BiDi WebSocket URL');
+  console.error('');
+  console.error('General options:');
   console.error('  -d, --debug               Enable BiDi debug logging');
   console.error('  -t, --timeout <ms>        Script timeout in ms (default: 30000)');
   process.exit(values.help ? 0 : 1);
@@ -50,10 +63,14 @@ for (const entry of (values.pref ?? [])) {
 
 const env = {
   ...process.env,
-  ...(values.firefox  && { FIREFOX_PATH:    values.firefox }),
-  ...(values.profile  && { FIREFOX_PROFILE: values.profile }),
-  ...(values.headless && { FIREFOX_HEADLESS: '1' }),
-  ...(values.debug    && { BIDI_DEBUG:       '1' }),
+  ...(values.browser    && { BIDI_BROWSER:    values.browser }),
+  ...(values.firefox    && { FIREFOX_PATH:    values.firefox }),
+  ...(values.profile    && { FIREFOX_PROFILE: values.profile }),
+  FIREFOX_HEADLESS: (values.browser !== 'chrome' && values.headless) ? '1' : '0',
+  CHROME_HEADLESS:  (values.browser === 'chrome'  && values.headless) ? '1' : '0',
+  ...(values['chrome-path']        && { CHROME_PATH:         values['chrome-path'] }),
+  ...(values['bidi-url'] && { CHROME_BIDI_URL: values['bidi-url'] }),
+  ...(values.debug      && { BIDI_DEBUG:      '1' }),
   ...(Object.keys(prefs).length > 0 && { FIREFOX_PREFS: JSON.stringify(prefs) }),
 };
 
