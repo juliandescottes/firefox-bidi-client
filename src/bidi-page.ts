@@ -3,7 +3,7 @@ import { BiDiConnection } from './bidi-connection.js';
 import { logDebug } from './logger.js';
 
 export interface NavigateOptions {
-  wait?: 'none' | 'interactive' | 'complete';
+  timeout?: number;
 }
 
 export interface WaitForOptions {
@@ -11,8 +11,21 @@ export interface WaitForOptions {
   interval?: number;
 }
 
+export interface EvaluateOptions {
+  timeout?: number;
+}
+
+export interface ClickOptions {
+  timeout?: number;
+}
+
+export interface PerformActionsOptions {
+  timeout?: number;
+}
+
 export interface ScreenshotOptions {
   path?: string;
+  timeout?: number;
 }
 
 // ── BiDi remote value ────────────────────────────────────────────────────────
@@ -68,6 +81,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number | undefined, label: string): Promise<T> {
+  if (ms === undefined) return promise;
+  return Promise.race([
+    promise,
+    sleep(ms).then((): never => { throw new Error(`${label} timed out after ${ms}ms`); }),
+  ]);
+}
+
 // ── BiDiPage ─────────────────────────────────────────────────────────────────
 
 export class BiDiPage {
@@ -83,11 +104,17 @@ export class BiDiPage {
   // ── Navigation ─────────────────────────────────────────────────────────────
 
   async goto(url: string, options: NavigateOptions = {}): Promise<void> {
-    await this.connection.sendCommand('browsingContext.navigate', {
-      context: this.contextId,
-      url,
-      wait: options.wait ?? 'complete',
-    });
+    const { timeout = 5000 } = options;
+
+    await Promise.race([
+      this.connection.sendCommand('browsingContext.navigate', {
+        context: this.contextId,
+        url,
+        wait: 'complete',
+      }),
+      sleep(timeout).then(() => logDebug(`Navigation to ${url} timed out after ${timeout}ms`)),
+    ]);
+
     logDebug(`Navigated to ${url}`);
   }
 
@@ -106,23 +133,21 @@ export class BiDiPage {
    *   await page.evaluate(() => document.title)
    *   await page.evaluate(selector => document.querySelector(selector).textContent, '#heading')
    */
-  async evaluate(expression: string | ((...args: any[]) => any), arg?: any): Promise<any> {
-    let result: any;
+  async evaluate(expression: string | ((...args: any[]) => any), arg?: any, options: EvaluateOptions = {}): Promise<any> {
+    const cmd = typeof expression === 'function'
+      ? this.connection.sendCommand('script.callFunction', {
+          functionDeclaration: expression.toString(),
+          target: { context: this.contextId },
+          awaitPromise: true,
+          arguments: arg !== undefined ? [serializeLocalValue(arg)] : [],
+        })
+      : this.connection.sendCommand('script.evaluate', {
+          expression,
+          target: { context: this.contextId },
+          awaitPromise: true,
+        });
 
-    if (typeof expression === 'function') {
-      result = await this.connection.sendCommand('script.callFunction', {
-        functionDeclaration: expression.toString(),
-        target: { context: this.contextId },
-        awaitPromise: true,
-        arguments: arg !== undefined ? [serializeLocalValue(arg)] : [],
-      });
-    } else {
-      result = await this.connection.sendCommand('script.evaluate', {
-        expression,
-        target: { context: this.contextId },
-        awaitPromise: true,
-      });
-    }
+    const result = await withTimeout(cmd, options.timeout, 'evaluate');
 
     if (result.type === 'exception') {
       throw new Error(result.exceptionDetails?.text ?? 'Script exception');
@@ -136,20 +161,25 @@ export class BiDiPage {
    * Send one or more BiDi input source actions and release when done.
    * Accepts the raw `actions` array from the input.performActions spec.
    */
-  async performActions(actions: any[]): Promise<void> {
-    await this.connection.sendCommand('input.performActions', {
-      context: this.contextId,
-      actions,
-    });
+  async performActions(actions: any[], options: PerformActionsOptions = {}): Promise<void> {
+    await withTimeout(
+      this.connection.sendCommand('input.performActions', { context: this.contextId, actions }),
+      options.timeout,
+      'performActions',
+    );
     await this.connection.sendCommand('input.releaseActions', { context: this.contextId });
   }
 
-  async click(selector: string): Promise<void> {
-    const located = await this.connection.sendCommand('browsingContext.locateNodes', {
-      context: this.contextId,
-      locator: { type: 'css', value: selector },
-      maxNodeCount: 1,
-    });
+  async click(selector: string, options: ClickOptions = {}): Promise<void> {
+    const located = await withTimeout(
+      this.connection.sendCommand('browsingContext.locateNodes', {
+        context: this.contextId,
+        locator: { type: 'css', value: selector },
+        maxNodeCount: 1,
+      }),
+      options.timeout,
+      `locateNodes(${selector})`,
+    );
 
     if (!located.nodes?.length) {
       throw new Error(`Element not found: ${selector}`);
@@ -166,7 +196,7 @@ export class BiDiPage {
         { type: 'pointerDown', button: 0 },
         { type: 'pointerUp', button: 0 },
       ],
-    }]);
+    }], options);
     logDebug(`Clicked "${selector}"`);
   }
 
@@ -245,9 +275,11 @@ export class BiDiPage {
    * Pass { path } to also save to disk.
    */
   async screenshot(options: ScreenshotOptions = {}): Promise<Buffer> {
-    const result = await this.connection.sendCommand('browsingContext.captureScreenshot', {
-      context: this.contextId,
-    });
+    const result = await withTimeout(
+      this.connection.sendCommand('browsingContext.captureScreenshot', { context: this.contextId }),
+      options.timeout,
+      'screenshot',
+    );
 
     const buffer = Buffer.from(result.data as string, 'base64');
 
