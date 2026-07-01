@@ -16,33 +16,50 @@ export class BiDiConnection {
   private namedEventHandlers: Map<string, Set<(params: any) => void>> = new Map();
   private connected: boolean = false;
   private options: BiDiConnectionOptions;
+  private _directSend: ((msg: object) => void) | null = null;
 
   constructor(options: BiDiConnectionOptions = {}) {
     this.options = {
       connectionTimeout: options.connectionTimeout || 5000,
-      commandTimeout: options.commandTimeout || 10000,
+      commandTimeout: options.commandTimeout || 20000,
     };
   }
 
   /**
-   * Connect to Firefox BiDi WebSocket endpoint
+   * Wire the connection directly to an in-process BiDi server (no WebSocket).
+   * sendFn receives outgoing BiDi commands as parsed objects.
+   * Call receiveDirect() to inject incoming messages from the server.
    */
-  async connect(port: number): Promise<void> {
-    logDebug(`Attempting to connect to BiDi on port ${port}`);
+  connectDirect(sendFn: (msg: object) => void): void {
+    this._directSend = sendFn;
+    this.connected = true;
+  }
 
-    // Try multiple endpoints
-    // Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-    const endpoints = [
-      `ws://127.0.0.1:${port}`,
-      `ws://127.0.0.1:${port}/session`,
-    ];
+  receiveDirect(message: object): void {
+    this.handleMessage(message);
+  }
+
+  /**
+   * Connect to a browser BiDi WebSocket endpoint.
+   * Pass a port number (Firefox) or a full WebSocket URL (Chrome).
+   */
+  async connect(portOrUrl: number | string): Promise<void> {
+    logDebug(`Attempting to connect to BiDi on ${portOrUrl}`);
+
+    // Chrome provides a full URL; Firefox just needs the port
+    const endpoints = typeof portOrUrl === 'string'
+      ? [portOrUrl]
+      : [
+          `ws://127.0.0.1:${portOrUrl}`,
+          `ws://127.0.0.1:${portOrUrl}/session`,
+        ];
 
     let lastError: Error | null = null;
 
     for (const endpoint of endpoints) {
       try {
         await this.connectToEndpoint(endpoint);
-        log(`✅ Connected to Firefox BiDi at ${endpoint}`);
+        log(`✅ Connected to BiDi at ${endpoint}`);
         this.connected = true;
         return;
       } catch (error) {
@@ -53,11 +70,7 @@ export class BiDiConnection {
 
     // All endpoints failed
     throw new Error(
-      `Failed to connect to Firefox on port ${port}.\n\n` +
-      `Make sure Firefox is running with remote debugging enabled:\n` +
-      `  firefox --remote-debugging-port=${port}\n\n` +
-      `Or on macOS:\n` +
-      `  /Applications/Firefox.app/Contents/MacOS/firefox --remote-debugging-port=${port}\n\n` +
+      `Failed to connect to browser BiDi at ${portOrUrl}.\n` +
       `Last error: ${lastError?.message || 'Unknown error'}`
     );
   }
@@ -145,6 +158,7 @@ export class BiDiConnection {
             new Error(`BiDi error in ${pending.method}: ${JSON.stringify(message.error)}`)
           );
         } else {
+          logDebug(`← BiDi result: ${pending.method} ${JSON.stringify(message.result || {})}`);
           pending.resolve(message.result || {});
         }
       }
@@ -178,15 +192,17 @@ export class BiDiConnection {
    * Send BiDi command and wait for response
    */
   async sendCommand(method: string, params: any = {}): Promise<any> {
-    if (!this.ws) {
-      throw new Error('Not connected to Firefox BiDi');
-    }
-
-    if (this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('Not connected to Firefox BiDi');
+    if (!this._directSend) {
+      if (!this.ws) {
+        throw new Error('Not connected to browser BiDi');
+      }
+      if (this.ws.readyState !== WebSocket.OPEN) {
+        throw new Error('Not connected to browser BiDi');
+      }
     }
 
     const id = this.nextId++;
+    const command = { id, method, params };
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
@@ -194,21 +210,15 @@ export class BiDiConnection {
         reject(new Error(`BiDi command timeout: ${method}`));
       }, this.options.commandTimeout);
 
-      this.pendingCommands.set(id, {
-        resolve,
-        reject,
-        timeout: timeoutId,
-        method,
-      });
+      this.pendingCommands.set(id, { resolve, reject, timeout: timeoutId, method });
 
-      const command = {
-        id,
-        method,
-        params,
-      };
-
-      logDebug(`→ BiDi command: ${method}`);
-      this.ws!.send(JSON.stringify(command));
+      if (this._directSend) {
+        logDebug(`→ BiDi command (direct): ${method} ${JSON.stringify(params)}`);
+        this._directSend(command);
+      } else {
+        logDebug(`→ BiDi command: ${method} ${JSON.stringify(params)}`);
+        this.ws!.send(JSON.stringify(command));
+      }
     });
   }
 
@@ -276,6 +286,7 @@ export class BiDiConnection {
    * Check if connected
    */
   isConnected(): boolean {
+    if (this._directSend) return this.connected;
     return this.connected && this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
@@ -283,11 +294,25 @@ export class BiDiConnection {
    * Close connection
    */
   async close(): Promise<void> {
+    if (this._directSend) {
+      logDebug('Closing BiDi direct connection');
+      for (const [, pending] of this.pendingCommands.entries()) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error('Connection closing'));
+      }
+      this.pendingCommands.clear();
+      this.eventHandlers.clear();
+      this.namedEventHandlers.clear();
+      this._directSend = null;
+      this.connected = false;
+      return;
+    }
+
     if (this.ws) {
       logDebug('Closing BiDi WebSocket connection');
 
       // Clear all pending commands
-      for (const [id, pending] of this.pendingCommands.entries()) {
+      for (const [, pending] of this.pendingCommands.entries()) {
         clearTimeout(pending.timeout);
         pending.reject(new Error('Connection closing'));
       }

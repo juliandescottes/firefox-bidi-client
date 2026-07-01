@@ -3,7 +3,10 @@
  *
  * Console events are not captured by BiDiPage — subscribe via the connection directly.
  * Replace the URL with the site under investigation.
- * Run: ff-bidi-run examples/check-console-errors.mjs --firefox /path/to/firefox --headless
+ *
+ * Firefox: ff-bidi-run examples/check-console-errors.mjs --headless
+ * Chrome:  start chromium-bidi or chromedriver first, then:
+ *          ff-bidi-run examples/check-console-errors.mjs --browser chrome --bidi-url ws://localhost:9222/session
  */
 import { startSession } from 'ff-test-firefox-bidi-client';
 
